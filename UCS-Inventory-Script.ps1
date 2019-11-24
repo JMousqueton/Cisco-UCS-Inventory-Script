@@ -1,28 +1,42 @@
 #
-#	Cisco UCS Inventory Script (UIS) - v1.3 (17-04-2016)
-#	 Martijn Smit <martijn@lostdomain.org>
+#	Cisco UCS Inventory Script - v5 (26-11-2018)
+#   Added:
+#   - Corrected UCSM version output
+#   - Corrected Profile Templates and added extended informations
+#   - Added Power Supplies Inventory
+#   - Added Firmware Packages
+#   - Added Catalog Package
+#   - Added extended informations at Service Profile Templates
+#   - Added extended informations at Server Storage Controller Inventory
+#   - Added extended informations at local disks
+#   - Added extended informations at memory modules
+#   - Added extended informations at adapter
+#   - Added vNIC Configuration
+#   - Added Best Effort and FC Qos Class
+#   - QoS Policies and QoS vNIC Policy Map moved to LAN Policies
+#   - Added priviladge for local user information
+#   - Added Disconnect-UCS at beginning
+#   - Added .html at the end of out file
 #
+#
+#   Description:
 #	- Grab all information from a UCS Manager and output it to a file.
 #	- Useful for post-implementation info dumps and scheduled checks
 #
-#	Usage: .\UCS-Inventory-Script-v1.2.ps1 -UCS <IP or hostname UCS Manager> [-OutFile <report.html>] [[-Password <passwd>] [-Username <user>]]
+#	Usage 1: .\UCS_Inventory_v5.ps1        and You will be asked for UCSM IP, UCSM Credentials and for filename
 #
-#   - If Username or Password parameter are omitted, the script will prompt for manual credentials
-#
-# v1.3 - 17-04-2016 - Added multiple UCS Manager support via a CSV file and logging to a file.
-# v1.2 - 30-06-2014 - Added a recommendations tab for configuration and health recommendations,
-#                     taken from experience in the field.
-# v1.1 - 30-12-2013 - Add arguments for the require input data, allow it to run as a scheduled task.
-# v1.0 - 25-11-2013 - First version; capture every bit of information from UCS Manager I could think of.
-#
+#	Usage 2: .\UCS_Inventory_v5.ps1 -UCS <IP or hostname UCS Manager> [-OutFile <report.html>] [[-Password <passwd>] [-Username <user>]]
+#  
+
 param([string]$UCSM = $null,
 		[string]$OutFile = $null,
 		[string]$Password = $null,
 		[string]$Username = $null,
-		[switch]$GeneratePassword,
 		[string]$CSVFile = $null,
 		[string]$LogFile = $null)
 
+# Disconnect any UCSM session
+Disconnect-UCS
 # Import the Cisco UCS PowerTool module, search for version 1 and version 2 and load which one we find
 if(!(Get-Module -ListAvailable -Name Cisco.UCSManager))
 {
@@ -44,17 +58,6 @@ else {
 	Write-Host "Cisco UCS PowerTool version 2.x loaded" -ForegroundColor "yellow"
 }
 
-
-# Generate an encrypted password from input
-if($GeneratePassword.IsPresent)
-{
-	$PlainPassword = Read-Host "Please enter your password"
-	$SecurePassword = $PlainPassword | ConvertTo-SecureString -AsPlainText -Force | ConvertFrom-SecureString
-	Write-Host "Done! Here's your encrypted password, save this in the CSV:"
-	Write-Host $SecurePassword
-	exit;
-}
-
 function WriteLog
 {
 	param ([string]$logstring)
@@ -69,12 +72,13 @@ function GenerateReport()
 {
 	Param([Parameter(Mandatory=$true)][string]$UCSM,
 				[Parameter(Mandatory=$true)][string]$OutFile,
-				[Parameter(Mandatory=$false)][string]$Username,
-				[Parameter(Mandatory=$false)][string]$Password,
+				[Parameter(Mandatory=$true)][string]$Username,
+				[Parameter(Mandatory=$true)][string]$Password,
 				[Parameter(Mandatory=$true)][string]$ManualGeneration)
 
 	# Generate credentials
-	if($Username -eq "" -or $Password -eq "") {
+	#if($Username -eq "" -or $Password -eq "") {
+    if(!$Username -or !$Password) {
 		$UCSCredentials = $Host.UI.PromptForCredential("UCS Manager Authentication", "Enter UCS Manager Login", "", "")
 	}
 	else
@@ -88,7 +92,8 @@ function GenerateReport()
 	}
 
 	# Create or empty file
-	New-Item -ItemType file $OutFile -Force | Out-Null
+
+	New-Item -ItemType file $OutFile".html" -Force | Out-Null
 
 	# Get current date and time
 	$date = Get-Date
@@ -123,11 +128,11 @@ function GenerateReport()
 	AddToOutput -txt "div.content.inactive { display: none; }"
 	AddToOutput -text "div.content-sub.inactive { display: none; } "
 	AddToOutput -txt "ul { height: 2em; list-style: none; margin: 0; padding: 0; }"
-	AddToOutput -txt "ul a { background: #e3e3e3; color: #000000; display: block; float: left; height: 2em; padding-left: 10px; text-decoration: none; font-weight: bold; }"
-	AddToOutput -txt "ul a:hover { background-color: #e85a05; background-position: 0 -120px; color: #ffffff; }"
+	AddToOutput -txt "ul a { background: #e3e3e3; color: #000000; display: block; float: left; height: 2em; padding-left: 10px; text-decoration: none; font-weight: bold; }" #0099cc
+	AddToOutput -txt "ul a:hover { background-color: #e85a05; background-position: 0 -120px; color: #ffffff; }" #0066cc
 	AddToOutput -txt "ul a:hover span { background-position: 100% -120px; }"
 	AddToOutput -txt "ul li { float: left; margin: 0 1px 0 0; }"
-	AddToOutput -txt "ul li.ui-tabs-active a { background-color: #e85a05; background-position: 0 -60px; color: #fff; font-weight: bold; }"
+	AddToOutput -txt "ul li.ui-tabs-active a { background-color: #e85a05; background-position: 0 -60px; color: #fff; font-weight: bold; }" #0066cc
 	AddToOutput -txt "ul li.ui-tabs-active a span { background-position: 100% -60px; }"
 	AddToOutput -txt "ul span { display: block; line-height: 2em; padding-right: 10px; }"
 	AddToOutput -txt "table { border: #e3e3e3 2px solid; border-collapse: collapse; min-width: 800px; }"
@@ -187,7 +192,9 @@ function GenerateReport()
 	AddToOutput -txt "<li><a href='#equipment-tab-fi'>Fabric Interconnect</a></li>"
 	AddToOutput -txt "<li><a href='#equipment-tab-chassis'>Chassis</a></li>"
 	AddToOutput -txt "<li><a href='#equipment-tab-servers'>Servers</a></li>"
+	AddToOutput -txt "<li><a href='#equipment-tab-psu'>Power Supplies</a></li>"	
 	AddToOutput -txt "<li><a href='#equipment-tab-firmware'>Firmware</a></li>"
+	
 	AddToOutput -txt "</ul>"
 	AddToOutput -txt "<div class='content-sub' id='equipment-tab-fi'>"
 
@@ -234,27 +241,58 @@ function GenerateReport()
 
 	AddToOutput -txt "</div>" # end subtab
 	AddToOutput -txt "<div class='content-sub' id='equipment-tab-servers'>"
+	
+    # Get all UCS Servers info
+	#AddToOutput -txt "<h2>Server Inventory</h2>"
+	#$Global:TMP_OUTPUT += Get-UcsServer | Sort-Object -Property DN | Select-Object Dn,Model,AvailableMemory,NumOfCpus,NumOfCores,NumOfAdaptors,Presence,OperState,Operability,OperPower,Serial,Discovery,@{Name="ConnPath"; Expression = {$_.ConnPath}},@{Name="ConnStatus"; Expression = {$_.ConnStatus}} | ConvertTo-Html -Fragment
 
-	# Get all UCS servers and server info
-
-	# Does the system have blade servers? return those
-	if (Get-UcsBlade) {
+	# Get all UCS Blade Servers info
+	If (Get-UcsBlade) {
 		AddToOutput -txt "<h2>Server Inventory - Blades</h2>"
-		$Global:TMP_OUTPUT += Get-UcsBlade | Select-Object ServerId,Model,AvailableMemory,@{N='CPUs';E={$_.NumOfCpus}},@{N='Cores';E={$_.NumOfCores}},@{N='Adaptors';E={$_.NumOfAdaptors}},@{N='eNICs';E={$_.NumOfEthHostIfs}},@{N='fNICs';E={$_.NumOfFcHostIfs}},AssignedToDn,OperPower,Serial | Sort-Object -Property ChassisID,SlotID | ConvertTo-Html -Fragment
+		$Global:TMP_OUTPUT += Get-UcsBlade | Select-Object Dn,ServerId,Model,AvailableMemory,@{N='CPUs';E={$_.NumOfCpus}},@{N='Cores';E={$_.NumOfCores}},@{N='Adaptors';E={$_.NumOfAdaptors}},@{N='eNICs';E={$_.NumOfEthHostIfs}},@{N='fNICs';E={$_.NumOfFcHostIfs}},@{Name="ConnPath"; Expression = {$_.ConnPath}},@{Name="ConnStatus"; Expression = {$_.ConnStatus}},Discovery,AssignedToDn,OperPower,OperState,Operability,Serial | Sort-Object -Property ChassisID,SlotID | ConvertTo-Html -Fragment
 	}
-	# Does the system have rack servers? return those
-	if (Get-UcsRackUnit) {
+	# Get all UCS Rack Servers info
+	If (Get-UcsRackUnit) {
 		AddToOutput -txt "<h2>Server Inventory - Rack-mounts</h2>"
-		$Global:TMP_OUTPUT += Get-UcsRackUnit | Select-Object ServerId,Model,AvailableMemory,@{N='CPUs';E={$_.NumOfCpus}},@{N='Cores';E={$_.NumOfCores}},@{N='Adaptors';E={$_.NumOfAdaptors}},@{N='eNICs';E={$_.NumOfEthHostIfs}},@{N='fNICs';E={$_.NumOfFcHostIfs}},AssignedToDn,OperPower,Serial | Sort-Object { [int]$_.ServerId } | ConvertTo-Html -Fragment
+		$Global:TMP_OUTPUT += Get-UcsRackUnit | Select-Object Dn,ServerId,Model,AvailableMemory,@{N='CPUs';E={$_.NumOfCpus}},@{N='Cores';E={$_.NumOfCores}},@{N='Adaptors';E={$_.NumOfAdaptors}},@{N='eNICs';E={$_.NumOfEthHostIfs}},@{N='fNICs';E={$_.NumOfFcHostIfs}},@{Name="ConnPath"; Expression = {$_.ConnPath}},@{Name="ConnStatus"; Expression = {$_.ConnStatus}},Discovery,AssignedToDn,OperPower,OperState,Operability,Serial | Sort-Object { [int]$_.ServerId } | ConvertTo-Html -Fragment
 	}
 
-	# Get server adaptor (mezzanine card) info
+    # Get server adaptor (mezzanine card) info
 	AddToOutput -txt "<h2>Server Adaptor Inventory</h2>"
-	$Global:TMP_OUTPUT += Get-UcsAdaptorUnit | Sort-Object -Property Dn | Select-Object ChassisId,BladeId,Rn,Model | ConvertTo-Html -Fragment
+    $VICAdaptors = Get-UcsAdaptorUnit | Sort-Object -Property Dn | Select-Object Dn,Rn,Model,Serial
+    ForEach ($VICAdaptor in $VICAdaptors){
+        If($VICAdaptor.Model -like "UCSB-MLOM-40G-01"){$VICAdaptor.Model="UCSB-MLOM-40G-01 (VIC 1240)"}
+        ElseIf($VICAdaptor.Model -like "UCSB-MLOM-40G-02"){$VICAdaptor.Model="UCSB-MLOM-40G-02 (VIC 1340)"}
+        ElseIf($VICAdaptor.Model -like "UCSB-MLOM-40G-03"){$VICAdaptor.Model="UCSB-MLOM-40G-03 (VIC 1340)"}
+        ElseIf($VICAdaptor.Model -like "UCSB-MLOM-40G-04"){$VICAdaptor.Model="UCSB-MLOM-40G-04 (VIC 1440)"}
+        ElseIf($VICAdaptor.Model -like "UCSB-VIC-M84-4P"){$VICAdaptor.Model="UCSB-VIC-M84-4P (VIC 1480)"}
+        ElseIf($VICAdaptor.Model -like "UCSB-VIC-M83-8P"){$VICAdaptor.Model="UCSB-VIC-M83-8P (VIC 1380)"}
+        ElseIf($VICAdaptor.Model -like "UCS-VIC-M82-8P"){$VICAdaptor.Model="UCS-VIC-M82-8P (VIC 1280)"}
+        ElseIf($VICAdaptor.Model -like "UCSB-MEZ-ELX-03"){$VICAdaptor.Model="UCSB-MEZ-ELX-03 (CNA M73KR-E Emulex)"}
+        ElseIf($VICAdaptor.Model -like "UCSB-MLOM-PT-01"){$VICAdaptor.Model="UCSB-MLOM-PT-01 (Port Expander Card for VIC)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-MLOM-C25Q-04"){$VICAdaptor.Model="UCSC-MLOM-C25Q-04 (VIC 1457)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-MLOM-C40Q-03"){$VICAdaptor.Model="UCSC-MLOM-C40Q-03 (VIC 1387)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-MLOM-C10T-02"){$VICAdaptor.Model="UCSC-MLOM-C10T-02 (VIC 1227T)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-MLOM-CSC-02"){$VICAdaptor.Model="UCSC-MLOM-CSC-02 (VIC 1227)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-MLOM-IRJ45"){$VICAdaptor.Model="UCSC-MLOM-IRJ45 (MLOM Intel i350)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-C10T-02"){$VICAdaptor.Model="UCSC-PCIE-C10T-02 (VIC 1225T)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-C40Q-02"){$VICAdaptor.Model="UCSC-PCIE-C40Q-02 (VIC 1285)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-CSC-02"){$VICAdaptor.Model="UCSC-PCIE-CSC-02 (VIC 1225)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-C40Q-03"){$VICAdaptor.Model="UCSC-PCIE-C40Q-03 (VIC 1385)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-C25Q-04"){$VICAdaptor.Model="UCSC-PCIE-C25Q-04 (VIC 1455)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-E14102"){$VICAdaptor.Model="UCSC-PCIE-E14102 (CNA OCe14102-FX Emulex)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-E14102B"){$VICAdaptor.Model="UCSC-PCIE-E14102B (CNA OCe14102B-UX Emulex)"}
+        ElseIf($VICAdaptor.Model -like "N2XX-AIPCI01"){$VICAdaptor.Model="N2XX-AIPCI01 (Adapter Intel X520)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-IRJ45"){$VICAdaptor.Model="UCSC-PCIE-IRJ45 (Adapter Intel i350)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-ITG"){$VICAdaptor.Model="UCSC-PCIE-ITG (Adapter Intel X540)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-ID10GC"){$VICAdaptor.Model="UCSC-PCIE-ID10GC (NIC Intel X550-T2)"}
+        ElseIf($VICAdaptor.Model -like "UCSC-PCIE-QD25GF"){$VICAdaptor.Model="UCSC-PCIE-QD25GF (NIC Qlogic QL41212H)"}
+    }
+	$Global:TMP_OUTPUT += $VICAdaptors | ConvertTo-Html -Fragment
 
 	# Get server adaptor port expander info
 	AddToOutput -txt "<h2>Servers with Adaptor Port Expanders</h2>"
-	$Global:TMP_OUTPUT += Get-UcsAdaptorUnitExtn | Sort-Object -Property Dn | Select-Object Dn,Model,Presence | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsAdaptorUnitExtn | Sort-Object -Property Dn | Select-Object Dn,Model,Presence,Serial | ConvertTo-Html -Fragment
 
 	# Get server processor info
 	AddToOutput -txt "<h2>Server CPU Inventory</h2>"
@@ -262,22 +300,40 @@ function GenerateReport()
 
 	# Get server memory info
 	AddToOutput -txt "<h2>Server Memory Inventory</h2>"
-	$Global:TMP_OUTPUT += Get-UcsMemoryUnit | Sort-Object -Property Dn,Location | where {$_.Capacity -ne "unspecified"} | Select-Object -Property Dn,Location,Capacity,Clock,OperState,Model | ConvertTo-Html -Fragment
+    $ServerMemory = Get-UcsMemoryUnit | Sort-Object -Property Dn,Location | Where-Object {$_.Capacity -ne "unspecified"} | Select-Object Dn,Location,Capacity,Clock,Latency,OperState,Model,Vendor
+    ForEach ($Memory in $ServerMemory){
+        If($Memory.Vendor -like "0x2C00"){$Memory.Vendor="Micron Technology, Inc."}
+        ElseIf($Memory.Vendor -like "0x5105"){$Memory.Vendor="Qimonda AG i. In"}
+        ElseIf($Memory.Vendor -like "0x802C"){$Memory.Vendor="Micron Technology, Inc."}
+        ElseIf($Memory.Vendor -like "0x80AD"){$Memory.Vendor="Hynix Semiconductor Inc."}
+        ElseIf($Memory.Vendor -like "0x80CE"){$Memory.Vendor="Samsung Electronics, Inc."}
+        ElseIf($Memory.Vendor -like "0x8551"){$Memory.Vendor="Qimonda AG i. In."}
+        ElseIf($Memory.Vendor -like "0xAD00"){$Memory.Vendor="Hynix Semiconductor Inc."}
+        ElseIf($Memory.Vendor -like "0xCE00"){$Memory.Vendor="Samsung Electronics, Inc."}
+    }
+    $Global:TMP_OUTPUT += $ServerMemory | ConvertTo-Html -Fragment
 
 	# Get server storage controller info
 	AddToOutput -txt "<h2>Server Storage Controller Inventory</h2>"
-	$Global:TMP_OUTPUT += Get-UcsStorageController | Sort-Object -Property Dn | Select-Object Vendor,Model | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsStorageController | Sort-Object -Property Dn | Select-Object Dn,Vendor,Model,RaidSupport,Serial | ConvertTo-Html -Fragment
 
 	# Get server local disk info
 	AddToOutput -txt "<h2>Server Local Disk Inventory</h2>"
-	$Global:TMP_OUTPUT += Get-UcsStorageLocalDisk | Sort-Object -Property Dn | Select-Object Dn,Model,Size,Serial | where {$_.Size -ne "unknown"}  | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsStorageLocalDisk | Sort-Object -Property Dn | Select-Object Dn,Model,Vendor,ConnectionProtocol,DeviceType,LinkSpeed,@{N="SizeMB";E={$_.Size}},Serial | Where-Object {$_.Size -ne "unknown"}  | ConvertTo-Html -Fragment
+
+	AddToOutput -txt "</div>" # end subtab
+	AddToOutput -txt "<div class='content-sub' id='equipment-tab-psu'>"
+
+	# Get Power Supplies info
+	AddToOutput -txt "<h2>Power Supplies Inventory</h2>"
+	$Global:TMP_OUTPUT += Get-UcsPsu | Sort-Object -Property Dn | Select-Object Dn,Model,Serial,OperState,Perf,Power,Thermal,Voltage | ConvertTo-Html -Fragment
 
 	AddToOutput -txt "</div>" # end subtab
 	AddToOutput -txt "<div class='content-sub' id='equipment-tab-firmware'>"
 
 	# Get UCSM firmware version
 	AddToOutput -txt "<h2>UCS Manager</h2>"
-	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "mgmt-ext"} | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "system"} | ConvertTo-Html -Fragment
 
 	# Get Fabric Interconnect firmware
 	AddToOutput -txt "<h2>Fabric Interconnect</h2>"
@@ -285,23 +341,32 @@ function GenerateReport()
 
 	# Get IOM firmware
 	AddToOutput -txt "<h2>IOM</h2>"
-	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Deployment,Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "iocard"} | Where-Object -FilterScript {$_.Deployment -notlike "boot-loader"} | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "iocard" -and $_.Dn -like "*fw-system"} | Where-Object -FilterScript {$_.Deployment -notlike "boot-loader"} | ConvertTo-Html -Fragment
 
 	# Get Server Adapter firmware
 	AddToOutput -txt "<h2>Server Adapters</h2>"
-	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Deployment,Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "adaptor"} | Where-Object -FilterScript {$_.Deployment -notlike "boot-loader"} | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "adaptor" -and $_.Dn -like "*fw-system"} | Where-Object -FilterScript {$_.Deployment -notlike "boot-loader"} | ConvertTo-Html -Fragment
 
 	# Get Server CIMC firmware
 	AddToOutput -txt "<h2>Server CIMC</h2>"
-	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Deployment,Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "blade-controller"} | Where-Object -FilterScript {$_.Deployment -notlike "boot-loader"} | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "blade-controller" -and $_.Dn -like "*fw-system"} | Where-Object -FilterScript {$_.Deployment -notlike "boot-loader"} | ConvertTo-Html -Fragment
 
 	# Get Server BIOS versions
 	AddToOutput -txt "<h2>Server BIOS</h2>"
-	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "blade-bios" -Or $_.Type -eq "rack-bios"} | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsFirmwareRunning | Select-Object Dn,Type,Version | Sort-Object -Property Dn | Where-Object {$_.Type -eq "blade-bios"} | ConvertTo-Html -Fragment
 
 	# Get Host Firmware Packages
 	AddToOutput -txt "<h2>Host Firmware Packages</h2>"
 	$Global:TMP_OUTPUT += Get-UcsFirmwareComputeHostPack | Select-Object Dn,Name,BladeBundleVersion,RackBundleVersion | ConvertTo-Html -Fragment
+
+	# Get Firmware Packages
+	AddToOutput -txt "<h2>Firmware Packages</h2>"
+	$Global:TMP_OUTPUT += Get-UcsFirmwarePackage | Select-Object Name,Type,Version | ConvertTo-Html -Fragment
+
+	# Get Catalog Package
+	AddToOutput -txt "<h2>Catalog Package</h2>"
+	$Global:TMP_OUTPUT += Get-UcsFirmwareCatalogPack | Select-Object CatalogName,CatalogVersion,Descr,Mode,Name | ConvertTo-Html -Fragment
+
 
 	AddToOutput -txt "</div>" # end subtab
 	AddToOutput -txt "</div>" # end subtabs container
@@ -324,7 +389,7 @@ function GenerateReport()
 
 	# Get Service Profile Templates
 	AddToOutput -txt "<h2>Service Profile Templates</h2>"
-	$Global:TMP_OUTPUT += Get-UcsServiceProfile | Where-object {$_.Type -ne "instance"}  | Sort-object -Property Name | Select-Object Dn,Name,BiosProfileName,BootPolicyName,HostFwPolicyName,LocalDiskPolicyName,MaintPolicyName,VconProfileName | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsServiceProfile | Where-object {$_.Type -like "*template"}  | Sort-object -Property Name | Select-Object Dn,Name,Type,BiosProfileName,BootPolicyName,IdentPoolName,HostFwPolicyName,LocalDiskPolicyName,ScrubPolicyName,MaintPolicyName,VconProfileName,PowerPolicyName | ConvertTo-Html -Fragment
 
 	# Get Service Profiles
 	AddToOutput -txt "<h2>Service Profiles</h2>"
@@ -492,26 +557,40 @@ function GenerateReport()
 
 	# Get QoS Class Configuration
 	AddToOutput -txt "<h2>QoS System Class Configuration</h2>"
-	$Global:TMP_OUTPUT += Get-UcsQosClass | Select-Object Priority,AdminState,Cos,Weight,Drop,Mtu | ConvertTo-Html -Fragment
+	$UcsQosClass = Get-UcsQosClass | Select-Object Priority,AdminState,Cos,Weight,Drop,Mtu
+	$UcsBestEffortQosClass = Get-UcsBestEffortQosClass | Select-Object Priority,AdminState,Cos,Weight,Drop,Mtu
+	$UcsFcQosClass = Get-UcsFcQosClass | Select-Object Priority,AdminState,Cos,Weight,Drop,Mtu
+    $UcsFullClass = @()
+    $UcsFullClass += $UcsQosClass
+    $UcsFullClass += $UcsBestEffortQosClass
+    $UcsFullClass += $UcsFcQosClass
+	#$Global:TMP_OUTPUT += Get-UcsQosClass | Select-Object Priority,AdminState,Cos,Weight,Drop,Mtu | ConvertTo-Html -Fragment
+	#$Global:TMP_OUTPUT += Get-UcsBestEffortQosClass | Select-Object Priority,AdminState,Cos,Weight,Drop,Mtu | ConvertTo-Html -Fragment
+	#$Global:TMP_OUTPUT += Get-UcsFcQosClass | Select-Object Priority,AdminState,Cos,Weight,Drop,Mtu | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += $UcsFullClass | ConvertTo-Html -Fragment
 
-	# Get QoS Policies
-	AddToOutput -txt "<h2>QoS Policies</h2>"
-	$Global:TMP_OUTPUT += Get-UcsQosPolicy | Select-Object Dn,Name | ConvertTo-Html -Fragment
-
-	# Get QoS vNIC Policy Map
-	AddToOutput -txt "<h2>QoS vNIC Policy Map</h2>"
-	$Global:TMP_OUTPUT += Get-UcsVnicEgressPolicy | Sort-Object -Property Prio | Select-Object Dn,Prio | ConvertTo-Html -Fragment
+	# Get vNIC Configuration
+	AddToOutput -txt "<h2>vNIC Configuration</h2>"
+    $Global:TMP_OUTPUT += Get-UcsVnic | Select-Object DN,Name,OperQosPolicyName,OperNwCtrlPolicyName,OperNwTemplName,EquipmentDn | ConvertTo-Html -Fragment
 
 	# Get Ethernet VLANs
 	AddToOutput -txt "<h2>Ethernet VLANs</h2>"
-	$Global:TMP_OUTPUT += Get-UcsVlan | where {$_.IfRole -eq "network"} | Sort-Object -Property Id | Select-Object Id,Name,SwitchId | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsVlan | Where-Object {$_.IfRole -eq "network"} | Sort-Object -Property Id | Select-Object Id,Name,SwitchId | ConvertTo-Html -Fragment
 
 	AddToOutput -txt "</div>" # end subtab
 	AddToOutput -txt "<div class='content-sub' id='lan-config-tab-policies'>"
 
 	# Get Network Control Policies
 	AddToOutput -txt "<h2>Network Control Policies</h2>"
-	$Global:TMP_OUTPUT += Get-UcsNetworkControlPolicy | Select-Object Dn,Name,Cdp,UplinkFailAction | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsNetworkControlPolicy | Select-Object Dn,Name,Cdp,UplinkFailAction,LldpReceive,LldpTransmit | ConvertTo-Html -Fragment
+
+	# Get QoS Policies
+	AddToOutput -txt "<h2>QoS Policies</h2>"
+	$Global:TMP_OUTPUT += Get-UcsQosPolicy | Select-Object Dn,Name | ConvertTo-Html -Fragment
+
+	# Get QoS vNIC Egress Policy Map
+	AddToOutput -txt "<h2>QoS vNIC Egress Policy Map</h2>"
+	$Global:TMP_OUTPUT += Get-UcsVnicEgressPolicy | Sort-Object -Property Prio | Select-Object Dn,Prio,OperPrio,Rate,Burst | ConvertTo-Html -Fragment
 
 	# Get vNIC Templates
 	$vnicTemplates = Get-UcsVnicTemplate | Select-Object Dn,Name,Descr,SwitchId,TemplType,IdentPoolName,Mtu,NwCtrlPolicyName,QosPolicyName
@@ -520,7 +599,7 @@ function GenerateReport()
 
 	# Get Ethernet VLAN to vNIC Mappings #
 	AddToOutput -txt "<h2>Ethernet VLAN to vNIC Mappings</h2>"
-	$Global:TMP_OUTPUT += Get-UcsAdaptorVlan | sort-object Dn |Select-Object Dn,Name,Id,SwitchId | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsAdaptorVlan | sort-object Dn |Select-Object Dn,Rn,Name,Id,SwitchId,Transport,Type | ConvertTo-Html -Fragment
 
 	AddToOutput -txt "</div>" # end subtab
 	AddToOutput -txt "<div class='content-sub' id='lan-config-tab-pools'>"
@@ -535,7 +614,7 @@ function GenerateReport()
 
 	# Get IP CIMC MGMT Pool Assignments
 	AddToOutput -txt "<h2>CIMC IP Pool Assignments</h2>"
-	$Global:TMP_OUTPUT += Get-UcsIpPoolAddr | Sort-Object -Property AssignedToDn | where {$_.Assigned -eq "yes"} | Select-Object AssignedToDn,Id | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsIpPoolAddr | Sort-Object -Property AssignedToDn | Where-Object {$_.Assigned -eq "yes"} | Select-Object AssignedToDn,Id | ConvertTo-Html -Fragment
 
 	# Get MAC Address Pools
 	AddToOutput -txt "<h2>MAC Address Pools</h2>"
@@ -547,7 +626,7 @@ function GenerateReport()
 
 	# Get MAC Pool Assignments
 	AddToOutput -txt "<h2>MAC Address Pool Assignments</h2>"
-	$Global:TMP_OUTPUT += Get-UcsVnic | Sort-Object -Property Dn | Select-Object Dn,IdentPoolName,Addr | where {$_.Addr -ne "derived"} | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsVnic | Sort-Object -Property Dn | Select-Object Dn,IdentPoolName,Addr | Where-Object {$_.Addr -ne "derived"} | ConvertTo-Html -Fragment
 
 	AddToOutput -txt "</div>" # end subtab
 	AddToOutput -txt "</div>" # end subtabs containers
@@ -627,7 +706,7 @@ function GenerateReport()
 
 	# Get WWNN/WWPN Pool Assignments
 	AddToOutput -txt "<h2>WWN Pool Assignments</h2>"
-	$Global:TMP_OUTPUT += Get-UcsVhba | Sort-Object -Property Addr | Select-Object Dn,IdentPoolName,NodeAddr,Addr | where {$_.NodeAddr -ne "vnic-derived"} | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsVhba | Sort-Object -Property Addr | Select-Object Dn,IdentPoolName,NodeAddr,Addr | Where-Object {$_.NodeAddr -ne "vnic-derived"} | ConvertTo-Html -Fragment
 
 	# Get WWNN/WWPN vHBA and adaptor Assignments
 	AddToOutput -txt "<h2>vHBA Details</h2>"
@@ -663,7 +742,7 @@ function GenerateReport()
 
 	# Get Fault Policy
 	AddToOutput -txt "<h2>Fault Policy</h2>"
-	$Global:TMP_OUTPUT += Get-UcsFaultPolicy | Select-Object Rn,AckAction,ClearAction,ClearInterval,FlapInterval,RetentionInterval | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsFaultPolicy | Select-Object Rn,AckAction,ClearAction,ClearInterval,FlapInterval,RetentionInterval,PinningExpirationInterval | ConvertTo-Html -Fragment
 
 	# Get Syslog Remote Destinations
 	AddToOutput -txt "<h2>Remote Syslog</h2>"
@@ -694,7 +773,7 @@ function GenerateReport()
 
 	# Get local users
 	AddToOutput -txt "<h2>Local users</h2>"
-	$Global:TMP_OUTPUT += Get-UcsLocalUser | Sort-Object Name | Select-Object Name,Email,AccountStatus,Expiration,Expires,PwdLifeTime | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsLocalUser | Sort-Object Name | Select-Object Name,@{N='Priv';E={$_.Priv}},Email,AccountStatus,Expiration,Expires,PwdLifeTime | ConvertTo-Html -Fragment
 
 	# Get LDAP server info
 	AddToOutput -txt "<h2>LDAP Providers</h2>"
@@ -705,8 +784,8 @@ function GenerateReport()
 	$Global:TMP_OUTPUT += Get-UcsLdapGroupMap | Select-Object Name | ConvertTo-Html -Fragment
 
 	# Get user and LDAP group roles
-	AddToOutput -txt "<h2>LDAP User Roles</h2>"
-	$Global:TMP_OUTPUT += Get-UcsUserRole | Select-Object Name,Dn | Where-Object {$_.Dn -like "sys/ldap-ext*"} | ConvertTo-Html -Fragment
+	AddToOutput -txt "<h2>User Roles</h2>"
+	$Global:TMP_OUTPUT += Get-UcsUserRole | Select-Object Name,Dn | ConvertTo-Html -Fragment
 
 	# Get tacacs providers
 	AddToOutput -txt "<h2>TACACS+ Providers</h2>"
@@ -788,7 +867,7 @@ function GenerateReport()
 
 	# Get all UCS Faults sorted by severity
 	AddToOutput -txt "<h2>Faults</h2>"
-	$Global:TMP_OUTPUT += Get-UcsFault | Sort-Object -Property @{Expression = {$_.Severity}; Ascending = $true}, Created -Descending | Select-Object Severity,Created,Descr,dn | ConvertTo-Html -Fragment
+	$Global:TMP_OUTPUT += Get-UcsFault | Sort-Object -Property Severity,Created -Descending | Select-Object Severity,Created,Descr,dn | ConvertTo-Html -Fragment
 
 	AddToOutput -txt "</div>" # end subtab
 	AddToOutput -txt "<div class='content-sub' id='stats-tab-equip'>"
@@ -814,11 +893,11 @@ function GenerateReport()
 	AddToOutput -txt "<h2>Chassis IOM Temperatures</h2>"
 	$Global:TMP_OUTPUT += Get-UcsEquipmentIOCardStats | Sort-Object -Property Dn | Select-Object Dn,AmbientTemp,AmbientTempAvg,Temp,TempAvg,Suspect | ConvertTo-Html -Fragment
 
-	# Get server power usage
+	# Get blade power usage
 	AddToOutput -txt "<h2>Server Power</h2>"
 	$Global:TMP_OUTPUT += Get-UcsComputeMbPowerStats | Sort-Object -Property Dn | Select-Object Dn,ConsumedPower,ConsumedPowerAvg,ConsumedPowerMax,InputCurrent,InputCurrentAvg,InputVoltage,InputVoltageAvg,Suspect | ConvertTo-Html -Fragment
 
-	# Get server temperatures
+	# Get blade temperatures
 	AddToOutput -txt "<h2>Server Temperatures</h2>"
 	$Global:TMP_OUTPUT += Get-UcsComputeMbTempStats | Sort-Object -Property Dn | Select-Object Dn,FmTempSenIo,FmTempSenIoAvg,FmTempSenIoMax,FmTempSenRear,FmTempSenRearAvg,FmTempSenRearMax,Suspect | ConvertTo-Html -Fragment
 
@@ -1007,14 +1086,14 @@ function GenerateReport()
 
 	# Maintenance policy check
 	$maintProfilesImmediate = [System.Collections.ArrayList]@()
-	$maintProfiles = Get-UcsMaintenancePolicy | where {$_.UptimeDisr -eq "immediate"} | Select-Object Name
+	$maintProfiles = Get-UcsMaintenancePolicy | Where-Object {$_.UptimeDisr -eq "immediate"} | Select-Object Name
 	foreach($prof in $maintProfiles) {
 		$maintProfilesImmediate += $prof.Name
 	}
 
 	$totalSPsImmediate = 0
 	$totalSPsImmediateProfiles = [System.Collections.ArrayList]@()
-	$maintServiceProfiles = Get-UcsServiceProfile | where {$_.AssocState -eq "associated"} | Select-Object Rn, MaintPolicyName
+	$maintServiceProfiles = Get-UcsServiceProfile | Where-Object {$_.AssocState -eq "associated"} | Select-Object Rn, MaintPolicyName
 	foreach($profile in $maintServiceProfiles)
 	{
 		if($maintProfilesImmediate -contains $profile.MaintPolicyName) {
@@ -1077,10 +1156,10 @@ function GenerateReport()
 	AddToOutput -txt "</body>"
 	AddToOutput -txt "</html>"
 
-	$Global:TMP_OUTPUT | Out-File $OutFile
+	$Global:TMP_OUTPUT | Out-File $OutFile".html"
 
 	# Open html file
-	Invoke-Item $OutFile
+	# Invoke-Item $OutFile
 
 	# Disconnect
 	Disconnect-Ucs
@@ -1109,6 +1188,25 @@ if ($CSVFile -eq "")
 	}
 	if ($OutFile -eq "") {
 		WriteLog "Please specify output file!"
+		Exit
+	}
+
+	# Prompt for Username
+	if ($Username -eq "") {
+		$Username = Read-Host "UCS Manager username"
+	}
+	if ($Username -eq "") {
+		WriteLog "Please specify UCS Manager username!"
+		Exit
+	}
+
+	# Prompt for Password
+	if ($Password -eq "") {
+		$GetPassword = Read-Host "UCS Manager user password" -AsSecureString
+        $Password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($GetPassword))
+	}
+	if ($Password -eq "") {
+		WriteLog "Please specify UCS Manager user password!"
 		Exit
 	}
 
